@@ -1,6 +1,9 @@
 package components;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -61,7 +64,7 @@ public class Observable<T> {
         };
     }
 
-    public Disposable subcribe(Consumer<T> onNext, Consumer<Throwable> onError, Runnable onComplete) {
+    public Disposable subscribe(Consumer<T> onNext, Consumer<Throwable> onError, Runnable onComplete) {
         return subscribe(new Observer<T>() {
             @Override
             public void onNext(T item) {
@@ -81,7 +84,7 @@ public class Observable<T> {
     }
 
     public <R> Observable<R> map(Function<T, R> mapper) {
-        return new Observable<>(observer -> subcribe(
+        return new Observable<>(observer -> subscribe(
                 item -> {
                     try {
                         observer.onNext(mapper.apply(item));
@@ -95,7 +98,7 @@ public class Observable<T> {
     }
 
     public Observable<T> filter(Predicate<T> predicate) {
-        return new Observable<>(observer -> subcribe(
+        return new Observable<>(observer -> subscribe(
                 item -> {
                     try {
                         if (predicate.test(item)) {
@@ -113,24 +116,60 @@ public class Observable<T> {
     public <R> Observable<R> flatMap(Function<T, Observable<R>> mapper) {
         return new Observable<>(observer -> {
             AtomicBoolean disposed = new AtomicBoolean(false);
-            subcribe(
+            AtomicInteger activeCount = new AtomicInteger(1);
+            List<Disposable> innerDisposables = new ArrayList<>();
+
+            Disposable mainDisposable = subscribe(
                     item -> {
                         if (!disposed.get()) {
                             try {
+                                activeCount.incrementAndGet();
                                 Observable<R> innerObservable = mapper.apply(item);
-                                innerObservable.subcribe(
-                                        observer::onNext,
-                                        observer::onError,
+                                Disposable innerDisposable = innerObservable.subscribe(
+                                        innerItem -> {
+                                            if (!disposed.get()) {
+                                                observer.onNext(innerItem);
+                                            }
+                                        },
+                                        error -> {
+                                            if (!disposed.get()) {
+                                                observer.onError(error);
+                                                disposed.set(true);
+                                            }
+                                        },
                                         () -> {
+                                            if (activeCount.decrementAndGet() == 0 && !disposed.get()) {
+                                                observer.onComplete();
+                                            }
                                         }
                                 );
+
+                                synchronized (innerDisposables) {
+                                    if (!disposed.get()) {
+                                        innerDisposables.add(innerDisposable);
+                                    } else {
+                                        innerDisposable.dispose();
+                                    }
+                                }
                             } catch (Exception e) {
-                                observer.onError(e);
+                                if (!disposed.get()) {
+                                    observer.onError(e);
+                                    disposed.set(true);
+                                }
                             }
                         }
                     },
-                    observer::onError,
-                    observer::onComplete
+                    error -> {
+                        if (!disposed.get()) {
+                            observer.onError(error);
+                            disposed.set(true);
+                        }
+                    },
+                    () -> {
+                        if (activeCount.decrementAndGet() == 0 && !disposed.get()) {
+                            observer.onComplete();
+                        }
+                    }
             );
         });
     }
@@ -140,7 +179,7 @@ public class Observable<T> {
     }
 
     public Observable<T> observeOn(Scheduler scheduler) {
-        return new Observable<>(observer -> subcribe(
+        return new Observable<>(observer -> subscribe(
                 item -> scheduler.execute(() -> observer.onNext(item)),
                 error -> scheduler.execute(() -> observer.onError(error)),
                 () -> scheduler.execute(observer::onComplete)
