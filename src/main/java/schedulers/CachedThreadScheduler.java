@@ -9,7 +9,7 @@ public class CachedThreadScheduler implements Scheduler {
 
     private final ExecutorService executor;
 
-    public CachedThreadScheduler(ExecutorService executor) {
+    public CachedThreadScheduler() {
         this.executor = Executors.newCachedThreadPool();
     }
 

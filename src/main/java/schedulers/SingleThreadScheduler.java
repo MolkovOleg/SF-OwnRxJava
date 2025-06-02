@@ -9,7 +9,7 @@ public class SingleThreadScheduler implements Scheduler {
 
     private final ExecutorService executor;
 
-    public SingleThreadScheduler(ExecutorService executor) {
+    public SingleThreadScheduler() {
         this.executor = Executors.newSingleThreadExecutor();
     }
 

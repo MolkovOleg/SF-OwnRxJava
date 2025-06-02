@@ -9,7 +9,7 @@ public class ComputationScheduler implements Scheduler {
 
     private final ExecutorService executor;
 
-    public ComputationScheduler(ExecutorService executor) {
+    public ComputationScheduler() {
 
         // Определение доступных потоков для пула
         int processors = Runtime.getRuntime().availableProcessors();
